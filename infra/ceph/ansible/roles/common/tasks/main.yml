@@ -27,3 +27,24 @@
   apt:
     name: [ceph-common, cephadm]
     state: present
+
+- name: Enable root SSH login
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PermitRootLogin'
+    line: 'PermitRootLogin prohibit-password'
+  notify: restart sshd
+
+- name: Create root .ssh directory
+  file:
+    path: /root/.ssh
+    state: directory
+    mode: '0700'
+
+- name: Copy vagrant authorized_keys to root
+  copy:
+    src: /home/vagrant/.ssh/authorized_keys
+    dest: /root/.ssh/authorized_keys
+    remote_src: yes
+    owner: root
+    mode: '0600'

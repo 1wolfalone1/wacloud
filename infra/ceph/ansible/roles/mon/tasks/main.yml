@@ -16,25 +16,39 @@
   when:
     - not ceph_bootstrapped.stat.exists
     - inventory_hostname == groups['ceph_mons'][0]
-  register: bootstrap_result
 
 - name: Get ceph public key
-  shell: cat /etc/ceph/ceph.pub
+  slurp:
+    src: /etc/ceph/ceph.pub
   register: ceph_pub_key
   when: inventory_hostname == groups['ceph_mons'][0]
 
-- name: Share ceph public key to all nodes
-  shell: |
-    ssh-keyscan {{ hostvars[item].ansible_host }} >> /root/.ssh/known_hosts
-    ssh-copy-id -f -i /etc/ceph/ceph.pub root@{{ hostvars[item].ansible_host }}
+- name: Distribute ceph public key to all MON nodes
+  authorized_key:
+    user: root
+    key: "{{ hostvars[groups['ceph_mons'][0]].ceph_pub_key.content | b64decode }}"
+    state: present
+  when: hostvars[groups['ceph_mons'][0]].ceph_pub_key is defined
+
+- name: Add ceph MON hosts to known_hosts on first MON
+  shell: ssh-keyscan {{ hostvars[item].ansible_host }} >> /root/.ssh/known_hosts
   loop: "{{ groups['ceph_mons'] }}"
   when: inventory_hostname == groups['ceph_mons'][0]
 
-- name: Add other MONs to cluster
+- name: Add ALL MONs to cluster
   shell: ceph orch host add {{ item }} {{ hostvars[item].ansible_host }}
-  loop: "{{ groups['ceph_mons'][1:] }}"
+  loop: "{{ groups['ceph_mons'] }}"
+  when: inventory_hostname == groups['ceph_mons'][0]
+  ignore_errors: yes
+
+- name: Wait for all hosts to be registered
+  shell: ceph orch host ls | grep -c "wacloud-node"
+  register: host_count
+  until: host_count.stdout | int >= groups['ceph_mons'] | length
+  retries: 10
+  delay: 10
   when: inventory_hostname == groups['ceph_mons'][0]
 
 - name: Deploy MGR
-  shell: ceph orch apply mgr --placement="host:{{ groups['ceph_mgrs'][0] }}"
+  shell: ceph orch apply mgr --placement="{{ groups['ceph_mgrs'][0] }}"
   when: inventory_hostname == groups['ceph_mons'][0]

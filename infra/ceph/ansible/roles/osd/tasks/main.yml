@@ -1,27 +1,51 @@
 ---
-- name: Check available disks
+- name: Check available disks (Debug info)
   shell: lsblk -dn -o NAME,SIZE | grep -v sda
   register: available_disks
   changed_when: false
 
+- name: Find the OSD disk (Any disk that is NOT sda and > 2GB)
+  # This finds the disk name (e.g., /dev/sdc) and ignores 10MB ghosts
+  shell: |
+    lsblk -dnbo NAME,SIZE,TYPE | \
+    awk '$3=="disk" && $1!="sda" && $2>2147483648 {print "/dev/"$1}' | head -n1
+  register: found_osd_disk
+  changed_when: false
+
+- name: Wipe the OSD disk signatures
+  # Use 'when' to skip if no disk was found or if it's too small
+  shell: |
+    wipefs -a {{ found_osd_disk.stdout }}
+    dd if=/dev/zero of={{ found_osd_disk.stdout }} bs=1M count=20 conv=notrunc
+  become: yes
+  when: found_osd_disk.stdout != ""
+  ignore_errors: yes
+
 - name: Add OSDs for all nodes
-  shell: ceph orch daemon add osd {{ item }}:/dev/sdb
+  # We point to the specific disk found on each node
+  shell: ceph orch daemon add osd {{ item }}:{{ hostvars[item].found_osd_disk.stdout }}
   loop: "{{ groups['ceph_osds'] }}"
-  when: inventory_hostname == groups['ceph_mons'][0]
+  when: 
+    - inventory_hostname == groups['ceph_mons'][0]
+    - hostvars[item].found_osd_disk.stdout is defined
+    - hostvars[item].found_osd_disk.stdout != ""
   ignore_errors: yes
 
 - name: Wait for OSDs to be up
-  shell: ceph osd stat
+  shell: "ceph osd stat | grep -E '3 osds: 3 up'"
   register: osd_stat
   until: osd_stat.rc == 0
-  retries: 10
+  retries: 20
   delay: 15
   when: inventory_hostname == groups['ceph_mons'][0]
 
 - name: Create RBD pool for KubeVirt
   shell: |
-    ceph osd pool create rbd 32
-    ceph osd pool application enable rbd rbd
-    rbd pool init rbd
+    # Check if pool exists first to prevent errors
+    if ! ceph osd pool ls | grep -w rbd; then
+      ceph osd pool create rbd 32
+      ceph osd pool application enable rbd rbd
+      rbd pool init rbd
+    fi
   when: inventory_hostname == groups['ceph_mons'][0]
-  ignore_errors: yes
+  become: yes

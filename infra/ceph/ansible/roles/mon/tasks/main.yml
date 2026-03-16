@@ -4,6 +4,13 @@
     path: /etc/ceph/ceph.conf
   register: ceph_bootstrapped
 
+- name: Pre-pull Ceph container image
+  command: podman pull quay.io/ceph/ceph:v19
+  register: pull_result
+  until: pull_result.rc == 0
+  retries: 3
+  delay: 10
+
 - name: Bootstrap Ceph cluster on first MON
   shell: |
     cephadm bootstrap \

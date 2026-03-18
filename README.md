@@ -11,7 +11,7 @@ Compute with KubeVirt, storage with Ceph, networking with [greattree](https://gi
 | **Orchestration** | Kubernetes | The backbone |
 | **Compute** | KubeVirt | VMs inside K8s pods |
 | **Storage** | Ceph | Distributed block storage (RBD) + object storage (RGW) |
-| **Networking** | [greattree](https://github.com/1wolfalone1/greattree) | Custom SDN — L2 switching, VXLAN overlay, L3 routing, firewall, DHCP. |
+| **Networking** | [greattree](https://github.com/1wolfalone1/greattree) | Custom SDN — L2 switching, VXLAN overlay, L3 routing, firewall, DHCP |
 
 ## Infrastructure
 
